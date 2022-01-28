@@ -7,14 +7,11 @@ Collection of 2 plugins for loading XNALara ASCII model format modified by Daemo
 ## Noesis plugin (fmt_Daemon_ascii.py)
   - originally fmt_xps_0_9_6.py was taken as a base and modified
   - added loading of bone rotations/axis (by Daemon)
-  - increased loading speed (by Daemon)
   - support RAPI interface (by minmode)
   - support 64K+ vertices (by minmode)
-  - support tangents (by minmode)
 
-## Blender addon (blender_ascii_import_seca.py)
-  - originally https://github.com/johnzero7/XNALaraMesh was taken as a base and modified
-  - support of Blender v2.8 (by SecaProject)
-  - support of bone rotations (by SecaProject)
-  - added import options to load ASCII models (by SecaProject)
-  - added import options to autotexture (by SecaProject)
+## Blender addon (blender_ascii_import_seca.py) by SecaProject
+  - support of Blender v2.8
+  - support of bone rotations/axis
+  - added import options to load ASCII models
+  - added import options to autotexture
