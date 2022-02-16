@@ -2,7 +2,7 @@ bl_info = {
     "name": "secASCII",
     "description": "Import ASCII files.",
     "author": "SecaProject",
-    "version": (0, 7, 1),
+    "version": (0, 8, 5, 1),
     "blender": (2, 80, 0),
     "location": "File > Import",
     "warning": "",
@@ -25,34 +25,24 @@ from bpy.props import BoolProperty, StringProperty, EnumProperty, FloatProperty,
 from bpy.types import Operator, OperatorFileListElement
 from bpy_extras.io_utils import ImportHelper
 
-def readData(f, line, uvCount, bones, upAxis, scale, loadNormal, loadVrtxClr, loadUv):
-    vertex   = f[line + 0][:-1].split(" ")
-    if upAxis == "0":
-        x    = float(vertex[0])/scale
-        y    = float(vertex[1])/scale 
-        z    = float(vertex[2])/scale
-    else:
-        y    = float(vertex[0])/scale
-        z    = float(vertex[1])/scale
-        x    = float(vertex[2])/scale
-    vertexs  = (x,y,z)
+def readData(f, line, uvCount, bones, self):
+    vertex       = f[line + 0][:-1].split(" ")
+    x            = float(vertex[0])
+    y            = float(vertex[1])
+    z            = float(vertex[2])
+    vertexs      = (x,y,z)
 
-    if loadNormal:
+    if self.loadNormal:
         normal   = f[line + 1][:-1].split(" ")
-        if upAxis == "0":
-            x        = float(normal[0])
-            y        = float(normal[1])
-            z        = float(normal[2])
-        else:
-            x        = float(normal[2])
-            y        = float(normal[0])
-            z        = float(normal[1])
+        x        = float(normal[0])
+        y        = float(normal[1])
+        z        = float(normal[2])
         normals  = mathutils.Vector((x,y,z)).normalized()
         #normals  = mathutils.Vector((0,1,0)).normalized()
     else:
         normals  = False
 
-    if loadVrtxClr:
+    if self.loadVertexColor:
         color    = f[line + 2][:-1].split(" ")
         r        = int(color[0])/255
         g        = int(color[1])/255
@@ -62,15 +52,15 @@ def readData(f, line, uvCount, bones, upAxis, scale, loadNormal, loadVrtxClr, lo
     else:
         colors   = False
 
-    uvs      = []
-    if loadUv:
+    uvs          = []
+    if self.loadUV:
         for j in range(uvCount):
             uv   = f[line + 3 + j][:-1].split(" ")
             u    = float(uv[0])
             v    = 1-float(uv[1])
             uvs.append((u,v))
 
-    weights  = []
+    weights      = []
     if bones > 0:
         weightId = f[line + 3 + uvCount][:-1].split(" ")
         weight   = f[line + 4 + uvCount][:-1].split(" ")
@@ -80,7 +70,7 @@ def readData(f, line, uvCount, bones, upAxis, scale, loadNormal, loadVrtxClr, lo
         weights  = False
     return [vertexs, normals, colors, uvs, weights ]
 
-def createMaterial(materialName, path, format, textureList, suffix):
+def createMaterial(materialName, self, textureList):
     mat = bpy.data.materials.get(materialName)
     if mat is None:
         mat                                         = bpy.data.materials.new(name=materialName)
@@ -96,73 +86,59 @@ def createMaterial(materialName, path, format, textureList, suffix):
         matOut.width                                = 0.0
         matOut.location                             = (250, 0)
 
-        if suffix:
-            for h in range(len(suffix)):
-                length = len(suffix[h]) * -1
-                for i in textureList:
-                    if i[0][length:] == suffix[h]:
-                        texture = i[0]
-                        nodeConfig                            = mat.node_tree.nodes.new('ShaderNodeTexImage')
-                        nodeConfig.hide                       = True
-                        nodeConfig.width                      = 0.0
-                        nodeConfig.interpolation              = 'Closest'
-                        if bpy.data.images.get(i[0]+format) is None:
-                            pathTo = ""
-                            if os.path.isfile(path+"\\"+texture+format):
-                                pathTo           = path+"\\"+texture+format
-                                nodeConfig.image = bpy.data.images.load(pathTo)
-                            else:
-                                print("Could't find",path+"\\"+texture+format)
-                        else:
-                            nodeConfig.image = bpy.data.images.get(texture+format)
+        mat.node_tree.links.new(matOut.inputs['Surface'],       bsdf.outputs['BSDF'])
 
-                        if nodeConfig.image:
-                            if h == 0: # Base Color
-                                nodeConfig.location  = (-70, 130)
-                                mat.node_tree.links.new(bsdf.inputs['Base Color'], nodeConfig.outputs['Color'])
-                            elif h == 1: # Normal
-                                normalMap            = mat.node_tree.nodes.new('ShaderNodeNormalMap')
-                                normalMap.hide       = True
-                                normalMap.space      = 'BLENDER_WORLD'
-                                normalMap.location   = (-70, -150)
-                                normalMap.inputs[0].default_value = 0.6
-                                nodeConfig.location  = (-370, -150)
-                                mat.node_tree.links.new(normalMap.inputs['Color'],     nodeConfig.outputs['Color'])
-                                mat.node_tree.links.new(bsdf.inputs['Normal'],     normalMap.outputs['Normal'])
-                            elif h == 2: # Metallic
-                                nodeConfig.location  = (-120, 90)
-                                mat.node_tree.links.new(bsdf.inputs['Metallic'],   nodeConfig.outputs['Color'])
-                            elif h == 3: # Opacity
-                                nodeConfig.location  = (-120, -110)
-                                mat.node_tree.links.new(bsdf.inputs['Alpha'],      nodeConfig.outputs['Color'])
-                        break
-
-        else:
-            texBaseColor                            = mat.node_tree.nodes.new('ShaderNodeTexImage')
-            texBaseColor.hide                       = True
-            texBaseColor.width                      = 0.0
-            texBaseColor.location                   = (-49, 157)
-            texBaseColor.interpolation              = 'Closest'
-            if bpy.data.images.get(textureList[0][0]+format) is None:
-                pathTo = ""
-                if os.path.isfile(path+"\\"+textureList[0][0]+format):
-                    pathTo           = path+"\\"+textureList[0][0]+format
-                    texBaseColor.image = bpy.data.images.load(pathTo)
+        if textureList[0][0] and textureList[0][0] != "no_diffuse":
+            texDiffuse                              = mat.node_tree.nodes.new('ShaderNodeTexImage')
+            texDiffuse.hide                         = True
+            texDiffuse.width                        = 0.0
+            texDiffuse.location                     = (-49, 157)
+            texDiffuse.interpolation                = 'Closest'
+            if bpy.data.images.get(textureList[0][0]+self.textureFormat) is None:
+                if os.path.isfile(self.texturePath+"/"+textureList[0][0]+self.textureFormat):
+                    pathTo          = self.texturePath+"/"+textureList[0][0]+self.textureFormat
+                    texDiffuse.image = bpy.data.images.load(pathTo)
+                    mat.blend_method = 'HASHED'
+                    mat.node_tree.links.new(bsdf.inputs['Base Color'], texDiffuse.outputs['Color'])
+                    mat.node_tree.links.new(bsdf.inputs['Alpha'],      texDiffuse.outputs['Alpha'])
+                    #mat.node_tree.links.new(bsdf.inputs['Base Color'], texNormal.outputs['Color'])
                 else:
-                    print("Could't find",path+"\\"+textureList[0][0]+format)
+                    print("Could't find",self.texturePath+"/"+textureList[0][0]+self.textureFormat)
             else:
-                texBaseColor.image = bpy.data.images.get(textureList[0][0]+format)
-            mat.node_tree.links.new(bsdf.inputs['Base Color'], texBaseColor.outputs['Color'])
+                texDiffuse.image = bpy.data.images.get(textureList[0][0]+self.textureFormat)
+
+        if len( textureList ) > 1:
+            if textureList[1][0] and textureList[1][0] != "no_normal":
+                texNormal                                   = mat.node_tree.nodes.new('ShaderNodeTexImage')
+                texNormal.hide                              = True
+                texNormal.width                             = 0.0
+                texNormal.location                          = (-100, 20)
+                texNormal.interpolation                     = 'Closest'
+                if bpy.data.images.get(textureList[1][0]+self.textureFormat) is None:
+                    if os.path.isfile(self.texturePath+"/"+textureList[1][0]+self.textureFormat):
+                        pathTo          = self.texturePath+"/"+textureList[1][0]+self.textureFormat
+                        texNormal.image = bpy.data.images.load(pathTo)
+                        mat.node_tree.links.new(bsdf.inputs['Normal'],      texNormal.outputs['Color'])
+                        #mat.node_tree.links.new(bsdf.inputs['Base Color'], texNormal.outputs['Color'])
+                    else:
+                        print("Could't find",self.texturePath+"/"+textureList[1][0]+self.textureFormat)
+                else:
+                    texNormal.image = bpy.data.images.get(textureList[1][0]+self.textureFormat)
+
     return mat
 
-def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNormal, loadVrtxClr, loadUv, format, path, suffix):
+def readASCII280(context, f, collect, fileName, self):
     # SKELETON
     boneCount = int(f[0])
-    if boneCount != 0 and loadSkel:
-        skl    = bpy.data.objects.new(fileName, bpy.data.armatures.new("arm_"+fileName))
+    if boneCount != 0 and self.loadSkeleton:
+        skl    = bpy.data.objects.new("arm_"+fileName, bpy.data.armatures.new("armature"))
         skl.data.display_type = "STICK"
         collect.objects.link(skl)
         bpy.context.view_layer.objects.active = skl
+
+        if self.upAxis == "1":
+            skl.rotation_euler = (math.radians(90), 0, math.radians(90) ) 
+        skl.scale = ( 1/self.scale, 1/self.scale, 1/self.scale )
 
         boneList = []
         bpy.ops.object.mode_set(mode='EDIT')
@@ -171,10 +147,8 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
             parent      = int(f[h * 3 + 2])
             coords      = f[h * 3 + 3][:-1].split(" ")
             quat        = mathutils.Quaternion([float(coords[6]), float(coords[3]), float(coords[4]), float(coords[5])]).to_matrix().to_4x4()
-            if upAxis == "0":
-                locate  = [float(coords[0])/scale, float(coords[1])/scale, float(coords[2])/scale]
-            else:
-                locate  = [float(coords[2])/scale, float(coords[0])/scale, float(coords[1])/scale]
+            locate      = [float(coords[0]), float(coords[1]), float(coords[2])]
+
             pos         = mathutils.Matrix.Translation(locate)
             bone        = skl.data.edit_bones.new(name)
             bone.head   = mathutils.Vector(locate)
@@ -193,16 +167,17 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
     for h in range(meshCount):
         # SUBMESH INFO
         meshName     = f[currentLine+0][:-1]
-        mesh         = bpy.data.meshes.new("pol_" + str(h).zfill(2))
+        mesh         = bpy.data.meshes.new(fileName+"_" + str(h).zfill(2))
         uvCount      = int(f[currentLine+1])
         textureCount = int(f[currentLine+2])
-        textureList  = []
-        for i in range(textureCount):
-            textureName = f[currentLine + 3 + i*2 + 0 ][:-1].split(".")[0]
-            unkn        = f[currentLine + 3 + i*2 + 1 ][:-1]
-            textureList.append( [textureName, unkn] )
-        mat     = createMaterial( "material_"+str(h).zfill(3), path, format, textureList, suffix )
-        mesh.materials.append(mat)
+        if self.createMat:
+            textureList  = []
+            for i in range(textureCount):
+                textureName = f[currentLine + 3 + i*2 + 0 ][:-1].split(".")[0]
+                unkn        = f[currentLine + 3 + i*2 + 1 ][:-1]
+                textureList.append( [textureName, unkn] )
+            mat     = createMaterial( fileName + "_mat_" + str(h), self, textureList )
+            mesh.materials.append(mat)
 
         vertexCount  = int(f[currentLine + 3 + textureCount * 2])
         vertexLine   = currentLine + 4 + textureCount * 2
@@ -211,7 +186,6 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
             linesPerVertex += 2
         triangCount  = int(f[vertexLine+vertexCount * linesPerVertex])
 
-
         faces        = []
         vertexs      = []
         normals      = []
@@ -219,7 +193,7 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
         uvs          = []
         weights      = []
         for i in range(vertexCount):
-            values   = readData(f, vertexLine + i * linesPerVertex, uvCount, boneCount, upAxis, scale, loadNormal, loadVrtxClr, loadUv)
+            values   = readData(f, vertexLine + i * linesPerVertex, uvCount, boneCount, self)
             vertexs.append( values[0] )
             normals.append( values[1] )
             vColors.append( values[2] )
@@ -237,8 +211,14 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
         bm           = bmesh.new()
         bm.from_mesh(mesh)
 
+        # Swap axis if activated
+        if self.upAxis == "1":
+            object.rotation_euler = (math.radians(90), 0, math.radians(90) ) 
+
+        object.scale = ( 1/self.scale, 1/self.scale, 1/self.scale )
+
         # UV's
-        if loadUv:
+        if self.loadUV:
             uvLayer = []
             for i in range(uvCount):
                 uvLayer.append( bm.loops.layers.uv.new() )
@@ -250,7 +230,7 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
                 i.material_index = h
 
         # Vertex colors
-        if loadVrtxClr:
+        if self.loadVertexColor:
             color_layer  = bm.loops.layers.color.new()
             for i in bm.faces:
                 i.loops[0][color_layer] = (vColors[faces[i.index][0]])
@@ -258,25 +238,24 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
                 i.loops[2][color_layer] = (vColors[faces[i.index][2]])
 
         # Weights
-        if boneCount != 0 and loadSkel:
+        if boneCount != 0 and self.loadSkeleton:
+            mod = object.modifiers.new(type="ARMATURE", name="arm_"+fileName)
+            mod.object = skl
+            mod.use_vertex_groups = True
+
             weight_layer = bm.verts.layers.deform.new()
-            orderBones = []
+            for i in boneList:
+                object.vertex_groups.new(name=i)
+
             for i in bm.verts:
                 for j in weights[i.index]:
-                    if not j[0] in orderBones:
-                        orderBones.append(j[0])
-                        object.vertex_groups.new(name=boneList[j[0]])
-                    i[weight_layer][orderBones.index(j[0])] = j[1]
-
-            object.modifiers.new(name="mod_" + str(h).zfill(2), type="ARMATURE")
-            object.modifiers["mod_" + str(h).zfill(2)].object  = skl
-            object.parent = skl
+                    i[weight_layer][j[0]] = j[1]
 
         bm.to_mesh(mesh)
         bm.free()
 
         # Normals
-        if loadNormal:
+        if self.loadNormal:
             for poly in mesh.polygons:
                 poly.use_smooth = True
 
@@ -298,6 +277,9 @@ def readASCII280(context, f, collect, fileName, upAxis, scale, loadSkel, loadNor
             for i in range(totalFrames):
                 frame    = int(f[currentLine].split(" ")[0])
                 nBones   = int(f[currentLine].split(" ")[1])
+
+    if boneCount != 0 and self.loadSkeleton:
+        bpy.ops.object.mode_set(mode='POSE')
     return
 
 class asciitool(Operator, ImportHelper):
@@ -325,8 +307,9 @@ class asciitool(Operator, ImportHelper):
         name="Scale",
         description="Reduce the scale of the model. Recommended if you need a specific scale",
         default=1.0,
-        min=0.0,
         soft_min=0.0,
+        step=10,
+        min=1,
     )
 
     loadSkeleton: BoolProperty(
@@ -344,13 +327,19 @@ class asciitool(Operator, ImportHelper):
     loadVertexColor: BoolProperty(
         name="Load Vertex Colors",
         description="Load Vertex Colors, useful for blending textures or adjusting colors\nDisable isn't recommended",
-        default=True,
+        default=False,
     )
 
     loadUV: BoolProperty(
         name="Load UV",
         description="Load all object UV channels or ignore them\nDisable isn't recommended but faster",
-        default=True,
+        default=False,
+    )
+
+    createMat: BoolProperty(
+        name="Materials",
+        description="Create materials",
+        default=False,
     )
 
     joinObj: BoolProperty(
@@ -380,49 +369,7 @@ class asciitool(Operator, ImportHelper):
     texturePath: StringProperty(
         name="Texture Path",
         description="Useful when texture path isn't in the same place as model file",
-        default="../textures/",
-    )
-
-    sColor: StringProperty(
-        name="Base Color / Diffuse suffix",
-        description="Base color or diffuse texture",
-        default="_C",
-    )
-
-    sNormal: StringProperty(
-        name="Normal suffix",
-        description="Normal texture",
-        default="_N",
-    )
-
-    sMetallic: StringProperty(
-        name="Metallic suffix",
-        description="Metallic texture",
-        default="_M",
-    )
-
-    sOpacity: StringProperty(
-        name="Opacity suffix",
-        description="Useful when texture path isn't in the same place as model file",
-        default="_O",
-    )
-
-    sAmbientOcclusion: StringProperty(
-        name="Ambient Occlusion suffix",
-        description="Useful when texture path isn't in the same place as model file",
-        default="",
-    )
-
-    sRoughness: StringProperty(
-        name="Roughness suffix",
-        description="Useful when texture path isn't in the same place as model file",
-        default="",
-    )
-
-    sSpecular: StringProperty(
-        name="Specular suffix",
-        description="Useful when texture path isn't in the same place as model file",
-        default="",
+        default="./",
     )
 
     files: CollectionProperty(
@@ -436,40 +383,23 @@ class asciitool(Operator, ImportHelper):
 
     def execute(self, context):
         if self.reset:
-            for i in bpy.data.objects:
-                bpy.data.objects.remove(i)
-            for i in bpy.data.meshes:
-                bpy.data.meshes.remove(i)
-            for i in bpy.data.lights:
-                bpy.data.lights.remove(i)
-            for i in bpy.data.materials:
-                bpy.data.materials.remove(i)
-            for i in bpy.data.images:
-                bpy.data.images.remove(i)
-            for i in bpy.data.collections:
-                bpy.data.collections.remove(i)
-        startScript = time.time()
-        directory    = self.directory
-        scale        = self.scale
-        loadSkeleton = self.loadSkeleton
-        loadNormal   = self.loadNormal
-        loadVertxClr = self.loadVertexColor
-        loadUV       = self.loadUV
-        texturePath  = self.texturePath if self.texturePath[1] == ":" else os.path.abspath(directory+self.texturePath)
+            bpy.ops.wm.read_factory_settings(use_empty=False)
+        startScript  = time.time()
+        self.texturePath  = self.texturePath if self.texturePath[1] == ":" else os.path.abspath(self.directory+self.texturePath)
         print("Configuration")
-        print("  Up axis:        Original" if self.upAxis == "0" else "  Up axis:        Change")
-        print("  Scale:          Original" if scale == 1         else "  Scale:          "+str(scale))
-        print("  Skeleton:       Original" if loadSkeleton       else "  Skeleton:       Skip")
-        print("  Normals:        Original" if loadNormal         else "  Normals:        Skip")
-        print("  Vertex Colors:  Original" if loadVertxClr       else "  Vertex Colors:  Skip")
-        print("  UV coords:      Original" if loadUV             else "  UV coords:      Skip")
-        print("  Join objects:   Yes"      if self.joinObj       else "  Join objects:   No")
+        print("  Up axis:        Original" if self.upAxis == "0"   else "  Up axis:        Change")
+        print("  Scale:          Original" if self.scale == 1      else "  Scale:          "+str(self.scale)+":1")
+        print("  Skeleton:       Original" if self.loadSkeleton    else "  Skeleton:       Skip")
+        print("  Normals:        Original" if self.loadNormal      else "  Normals:        Skip")
+        print("  Vertex Colors:  Original" if self.loadVertexColor else "  Vertex Colors:  Skip")
+        print("  UV coords:      Original" if self.loadUV          else "  UV coords:      Skip")
+        print("  Join objects:   Yes"      if self.joinObj         else "  Join objects:   No")
         print("  Texture format:",self.textureFormat)
-        print("  Texture path:  ",texturePath)
+        print("  Texture path:  ",self.texturePath)
         print("================")
 
         for file_elem in self.files:
-            file      = directory+file_elem.name
+            file      = self.directory+file_elem.name
             fileName  = bpy.path.basename(file)
             fileExtn  = fileName.split(".")[-1]
             fileName  = fileName.split(".")[0]
@@ -478,20 +408,17 @@ class asciitool(Operator, ImportHelper):
             print(" ",fileName)
             start_time = time.time()
             if fileExtn == "ascii":
-                if bpy.data.collections.get("ascii_"+fileName) is not None:
-                    collect = bpy.data.collections.get("ascii_"+fileName)
+                if bpy.data.collections.get(fileName+"_col") is not None:
+                    collect = bpy.data.collections.get(fileName+"_col")
                 else:
-                    collect  = bpy.data.collections.new("ascii_"+fileName)
+                    collect  = bpy.data.collections.new(fileName+"_col")
                     bpy.context.scene.collection.children.link( collect )
-                if self.sColor or self.sNormal or self.sMetallic or self.sOpacity or self.sAmbientOcclusion or self.sRoughness or self.sSpecular:
-                    suffix = [self.sColor, self.sNormal, self.sMetallic, self.sOpacity, self.sAmbientOcclusion, self.sRoughness, self.sSpecular]
-                else:
-                    suffix = False
-                readASCII280(context, binfile, collect, fileName, self.upAxis, scale, loadSkeleton, loadNormal, loadVertxClr, loadUV, self.textureFormat, texturePath, suffix)
+
+                readASCII280(context, binfile, collect, fileName, self)
 
                 if self.joinObj:
                     isTheFirstOne = True
-                    for obj in bpy.data.collections["ascii_"+fileName].all_objects:
+                    for obj in bpy.data.collections[fileName+"_col"].all_objects:
                         if obj.type == "ARMATURE":
                             armature = obj
                         if obj.type == "MESH":
