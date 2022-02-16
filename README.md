@@ -11,7 +11,9 @@ Collection of 2 plugins for loading XNALara ASCII model format modified by Daemo
   - support 64K+ vertices (by minmode)
 
 ## Blender addon (blender_ascii_import_seca.py) by SecaProject
-  - support of Blender v2.8
+  - support of Blender v2.8+, v2.9+, v3.0+
   - support of bone rotations/axis
   - added import options to load ASCII models
   - added import options to autotexture
+
+## 3DS Max script (xnalara_io.ms) by mariokart
